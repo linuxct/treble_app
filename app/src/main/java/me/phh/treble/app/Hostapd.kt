@@ -8,6 +8,8 @@ import android.os.SystemProperties
 import android.util.Log
 import java.io.File
 import java.util.ArrayList
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
 
 class Hostapd: EntryStartup {
     val hostapdSvc = object: android.hardware.wifi.hostapd.V1_0.IHostapd.Stub() {
@@ -35,7 +37,22 @@ class Hostapd: EntryStartup {
                                 .padStart(2, '0')
                     }
 
-        fun generatePsk(ssid: ArrayList<Byte>, passphrase: String): String = ""
+        fun generatePsk(ssid: ArrayList<Byte>, passphrase: String): String {
+            val currentSSID = ssid.toByteArray()
+            val currentPassphrase = passphrase.toCharArray()
+
+            val spec = PBEKeySpec(currentPassphrase, currentSSID, 4096, 256)
+            val skf = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1")
+            val secret = skf.generateSecret(spec).encoded
+
+            val sb = StringBuilder()
+            for (byte in secret) {
+                val st = String.format("%02X", byte)
+                sb.append(st)
+            }
+
+            return sb.toString()
+        }
 
         override fun addAccessPoint(ifaceParams: IHostapd.IfaceParams, nwParams: IHostapd.NetworkParams): HostapdStatus {
             Log.d("PHH", "Hostapd add access point")
@@ -44,7 +61,9 @@ class Hostapd: EntryStartup {
 
             val ssidHex = stringToHex(nwParams.ssid)
             var encryptionConfig = ""
-            /*if (nwParams.encryptionType != IHostapd.EncryptionType.NONE) {
+
+
+            if (nwParams.encryptionType != IHostapd.EncryptionType.NONE) {
                 val psk = generatePsk(nwParams.ssid, nwParams.pskPassphrase)
 
                 if (psk == "") {
@@ -53,14 +72,14 @@ class Hostapd: EntryStartup {
                 }
                 when(nwParams.encryptionType) {
                     IHostapd.EncryptionType.WPA ->
-                        encryptionConfig = "wpa=3\nwpa_pairwise=TKIP CCMP\nwpa_psk=$psk\n"
+                        encryptionConfig = "wpa=3\nwpa_pairwise=TKIP CCMP\nwpa_psk=$psk\nwpa_key_mgmt=SAE\n"
                     IHostapd.EncryptionType.WPA2 ->
-                        encryptionConfig = "wpa=2\nrsn_pairwise=CCMP\nwpa_psk=$psk\n"
+                        encryptionConfig = "wpa=2\nrsn_pairwise=CCMP\nwpa_psk=$psk\nwpa_key_mgmt=WPA-PSK\n"
                     else -> {
                         ret.debugMessage = "Unknown encryption type ${nwParams.encryptionType}"
                     }
                 }
-            }*/
+            }
 
             val hw_mode = if(ifaceParams.channelParams.band == IHostapd.Band.BAND_5_GHZ) "a" else "g"
             val channel = ifaceParams.channelParams.channel
